@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Gastos Semanales</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0f1115;
+    color: #eee;
+    margin: 0;
+    padding: 20px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: #999; font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: #1a1d24;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    border: 1px solid #2a2e38;
+  }
+  .form-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  input, select {
+    background: #0f1115;
+    border: 1px solid #333;
+    color: #eee;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  input[type=text] { flex: 2; min-width: 140px; }
+  input[type=number] { flex: 1; min-width: 90px; }
+  select { flex: 1; min-width: 110px; }
+  button {
+    background: #6c5ce7;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  button:hover { background: #5a4bd6; }
+  button.secondary { background: #2a2e38; }
+  button.danger { background: #e74c3c; padding: 6px 10px; font-size: 12px; }
+  .week-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .week-nav button { padding: 6px 12px; }
+  .week-label { font-weight: 600; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 6px; font-size: 13px; border-bottom: 1px solid #2a2e38; }
+  th { color: #999; font-weight: 500; }
+  .cat-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; background: #2a2e38;
+  }
+  .total-box {
+    display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; margin-top: 10px;
+    padding-top: 10px; border-top: 1px solid #2a2e38;
+  }
+  .cat-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .cat-chip { background: #0f1115; border: 1px solid #333; border-radius: 8px; padding: 8px 10px; font-size: 12px; flex: 1; min-width: 100px; }
+  .cat-chip .amt { font-weight: 700; font-size: 14px; display: block; margin-top: 2px; }
+  .empty { color: #666; text-align: center; padding: 20px; font-size: 13px; }
+  .result-pay { color: #e74c3c; font-weight: 700; }
+  .result-back { color: #2ecc71; font-weight: 700; }
+  .result-ok { color: #999; }
+  .prorrateo-input { width: 70px; }
+  table td:nth-child(1) input { width: 90px; }
+  .loading { text-align: center; color: #666; padding: 20px; }
+  .save-bar { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-bottom: 10px; }
+  .save-status { font-size: 12px; color: #2ecc71; opacity: 0; transition: opacity .3s; }
+  .save-status.show { opacity: 1; }
+  button.save-btn { background: #2ecc71; }
+  button.save-btn:hover { background: #27ae60; }
+</style>
+</head>
+<body>
+
+<h1>💸 Gastos Semanales</h1>
+<div class="subtitle">
+  Se guarda automáticamente en este navegador — <span id="saveStatus" class="save-status">✓ Guardado</span>
+</div>
+<div id="storageWarning" style="display:none;background:#3a1f1f;border:1px solid #e74c3c;color:#ffb3b3;padding:12px;border-radius:8px;font-size:12px;margin-bottom:14px">
+  ⚠️ Este navegador está bloqueando el guardado local (modo incógnito o restricción de archivo). Los datos NO se van a guardar al cerrar. Abrí el archivo en una carpeta normal, o mejor, subilo a GitHub Pages.
+</div>
+<div class="save-bar">
+  <button class="save-btn" onclick="guardarTodo()">💾 Guardar ahora</button>
+</div>
+
+<div class="card" id="loadingMsg">
+  <div class="loading">Cargando...</div>
+</div>
+
+<div id="app" style="display:none">
+
+  <div class="card">
+    <div class="form-row">
+      <input type="text" id="descInput" placeholder="Descripción (ej: edición CapCut, transporte...)">
+      <input type="number" id="amountInput" placeholder="Monto">
+    </div>
+    <div class="form-row">
+      <select id="categorySelect"></select>
+      <input type="text" id="newCatInput" placeholder="Nueva categoría..." style="flex:1;min-width:100px">
+      <button class="secondary" onclick="addCategory()">+ Categoría</button>
+    </div>
+    <button onclick="addExpense()" style="width:100%">Agregar gasto</button>
+  </div>
+
+  <div class="week-nav">
+    <button class="secondary" onclick="changeWeek(-1)">← Semana anterior</button>
+    <span class="week-label" id="weekLabel"></span>
+    <button class="secondary" onclick="changeWeek(1)">Semana siguiente →</button>
+  </div>
+  <div style="font-size:11px;color:#666;text-align:center;margin-top:-8px;margin-bottom:16px">
+    Cada semana cierra sola el domingo — el prorrateo y las compras personales NO se acumulan a la próxima
+  </div>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Descripción</th><th>Categoría</th><th>Monto</th><th></th></tr>
+      </thead>
+      <tbody id="expenseList"></tbody>
+    </table>
+    <div id="emptyMsg" class="empty" style="display:none">Sin gastos esta semana</div>
+    <div class="total-box">
+      <span>Total semana</span>
+      <span id="weekTotal">$0.00</span>
+    </div>
+    <div class="cat-summary" id="catSummary"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:16px;margin:0 0 4px 0">🧮 Prorrateo entre 7 personas <span id="weekClosedBadge"></span></h2>
+    <div class="subtitle" style="margin-bottom:12px">Cálculo exclusivo de esta semana — no arrastra nada de semanas anteriores</div>
+
+    <div class="form-row" style="align-items:center">
+      <span style="font-size:13px;color:#aaa">Base fija de todos:</span>
+      <input type="number" id="baseAporte" value="500" style="flex:0 0 100px" oninput="onBaseAporteInput()">
+      <span style="font-size:13px;color:#aaa;margin-left:auto">Total a repartir:</span>
+      <input type="number" id="totalGastosManual" style="flex:0 0 120px" oninput="onTotalManualInput()">
+      <button class="secondary" onclick="resetTotalAuto()" title="Usar el total automático de esta semana">↺</button>
+    </div>
+    <div style="font-size:12px;color:#666;margin-bottom:12px">
+      Se autocompleta con el total de gastos de ESTA semana. Podés sobreescribirlo con ↺ para volver al automático.
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Persona</th><th>Aportó base</th><th>Compra propia</th><th>Compras personales</th><th>Total aportado</th><th>Cuota</th><th>Resultado</th></tr>
+      </thead>
+      <tbody id="prorrateoList"></tbody>
+    </table>
+
+    <div class="total-box" style="flex-direction:column;gap:6px">
+      <div style="display:flex;justify-content:space-between;width:100%">
+        <span>Total de gastos</span>
+        <span id="totalGastosCheck">$0.00</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;width:100%">
+        <span>Total de ajuste</span>
+        <span id="totalAjusteCheck">$0.00</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const DEFAULT_CATEGORIES = ["Producción", "Herramientas", "Transporte", "Comida", "Otros"];
+const DEFAULT_NAMES = [1,2,3,4,5,6,7].map(n => `Persona ${n}`);
+
+let expenses = [];
+let categories = [];
+let peopleNames = [];
+let currentWeekOffset = 0;
+let weekData = null; // { base, compras:[7], totalManual, touched }
+
+// ---------- almacenamiento (localStorage: funciona abriendo el archivo directo o en GitHub Pages) ----------
+function storageAvailable() {
+  try {
+    localStorage.setItem('__test__', '1');
+    localStorage.removeItem('__test__');
+    return true;
+  } catch(e) { return false; }
+}
+
+function lsGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw !== null ? JSON.parse(raw) : fallback;
+  } catch(e) { return fallback; }
+}
+
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    flashSaved();
+    return true;
+  } catch(e) {
+    console.error('Error guardando', key, e);
+    document.getElementById('storageWarning').style.display = 'block';
+    return false;
+  }
+}
+
+function flashSaved() {
+  const el = document.getElementById('saveStatus');
+  el.classList.add('show');
+  clearTimeout(window._saveTimeout);
+  window._saveTimeout = setTimeout(() => el.classList.remove('show'), 1500);
+}
+
+// ---------- semanas: lunes a domingo, cada una con su propia key ----------
+function getWeekRange(offset) {
+  const now = new Date();
+  now.setDate(now.getDate() + offset * 7);
+  const day = now.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  monday.setHours(0,0,0,0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23,59,59,999);
+  return { start: monday, end: sunday };
+}
+
+function getWeekKey(offset) {
+  const { start } = getWeekRange(offset);
+  return start.toISOString().slice(0,10); // lunes de esa semana, ej: 2026-07-13
+}
+
+function formatDate(d) {
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+}
+
+function loadWeekData(offset) {
+  const key = 'gs_week_' + getWeekKey(offset);
+  const defaults = { base: 500, compras: [0,0,0,0,0,0,0], comprasPersonales: [0,0,0,0,0,0,0], totalManual: 0, touched: false };
+  const loaded = lsGet(key, defaults);
+  if (!loaded.compras || loaded.compras.length !== 7) loaded.compras = [0,0,0,0,0,0,0];
+  if (!loaded.comprasPersonales || loaded.comprasPersonales.length !== 7) loaded.comprasPersonales = [0,0,0,0,0,0,0];
+  weekData = loaded;
+}
+
+function saveWeekData() {
+  lsSet('gs_week_' + getWeekKey(currentWeekOffset), weekData);
+}
+
+// ---------- carga inicial ----------
+function loadData() {
+  const ok = storageAvailable();
+  document.getElementById('storageWarning').style.display = ok ? 'none' : 'block';
+
+  expenses = lsGet('gs_expenses', []);
+  categories = lsGet('gs_categories', DEFAULT_CATEGORIES);
+  peopleNames = lsGet('gs_people_names', DEFAULT_NAMES);
+  loadWeekData(currentWeekOffset);
+
+  document.getElementById('loadingMsg').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  renderCategorySelect();
+  render();
+}
+
+function guardarTodo() {
+  lsSet('gs_expenses', expenses);
+  lsSet('gs_categories', categories);
+  lsSet('gs_people_names', peopleNames);
+  saveWeekData();
+  flashSaved();
+}
+
+function renderCategorySelect() {
+  const sel = document.getElementById('categorySelect');
+  sel.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function addCategory() {
+  const input = document.getElementById('newCatInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (!categories.includes(val)) {
+    categories.push(val);
+    lsSet('gs_categories', categories);
+    renderCategorySelect();
+  }
+  input.value = '';
+}
+
+function addExpense() {
+  const desc = document.getElementById('descInput').value.trim();
+  const amount = parseFloat(document.getElementById('amountInput').value);
+  const category = document.getElementById('categorySelect').value;
+  if (!desc || isNaN(amount) || amount <= 0) {
+    alert('Poné una descripción y un monto válido');
+    return;
+  }
+  expenses.push({
+    id: Date.now(),
+    desc, amount, category,
+    date: new Date().toISOString()
+  });
+  lsSet('gs_expenses', expenses);
+  document.getElementById('descInput').value = '';
+  document.getElementById('amountInput').value = '';
+  render();
+}
+
+function deleteExpense(id) {
+  expenses = expenses.filter(e => e.id !== id);
+  lsSet('gs_expenses', expenses);
+  render();
+}
+
+function changeWeek(delta) {
+  currentWeekOffset += delta;
+  loadWeekData(currentWeekOffset);
+  render();
+}
+
+function resetTotalAuto() {
+  weekData.touched = false;
+  saveWeekData();
+  render();
+}
+
+function updatePersonName(idx, val) {
+  peopleNames[idx] = val;
+  lsSet('gs_people_names', peopleNames);
+}
+
+function onBaseAporteInput() {
+  weekData.base = parseFloat(document.getElementById('baseAporte').value) || 0;
+  saveWeekData();
+  renderProrrateo();
+}
+
+function onTotalManualInput() {
+  weekData.touched = true;
+  weekData.totalManual = parseFloat(document.getElementById('totalGastosManual').value) || 0;
+  saveWeekData();
+  renderProrrateo();
+}
+
+function updatePersonCompra(idx, val) {
+  weekData.compras[idx] = parseFloat(val) || 0;
+  saveWeekData();
+  renderProrrateo();
+}
+
+function updatePersonComprasPersonales(idx, val) {
+  weekData.comprasPersonales[idx] = parseFloat(val) || 0;
+  saveWeekData();
+  renderProrrateo();
+}
+
+// ---------- render principal ----------
+function render() {
+  const { start, end } = getWeekRange(currentWeekOffset);
+  document.getElementById('weekLabel').textContent =
+    `${formatDate(start)} – ${formatDate(end)}` + (currentWeekOffset === 0 ? ' (actual)' : '');
+  document.getElementById('weekClosedBadge').textContent = currentWeekOffset < 0 ? '🔒 cerrada' : '';
+
+  const weekExpenses = expenses.filter(e => {
+    const d = new Date(e.date);
+    return d >= start && d <= end;
+  }).sort((a,b) => new Date(b.date) - new Date(a.date));
+
+  const list = document.getElementById('expenseList');
+  const emptyMsg = document.getElementById('emptyMsg');
+
+  if (weekExpenses.length === 0) {
+    list.innerHTML = '';
+    emptyMsg.style.display = 'block';
+  } else {
+    emptyMsg.style.display = 'none';
+    list.innerHTML = weekExpenses.map(e => `
+      <tr>
+        <td>${e.desc}</td>
+        <td><span class="cat-tag">${e.category}</span></td>
+        <td>$${e.amount.toFixed(2)}</td>
+        <td><button class="danger" onclick="deleteExpense(${e.id})">✕</button></td>
+      </tr>
+    `).join('');
+  }
+
+  const weekTotal = weekExpenses.reduce((sum, e) => sum + e.amount, 0);
+  document.getElementById('weekTotal').textContent = `$${weekTotal.toFixed(2)}`;
+
+  const byCategory = {};
+  weekExpenses.forEach(e => {
+    byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+  });
+  document.getElementById('catSummary').innerHTML = Object.entries(byCategory)
+    .map(([cat, amt]) => `<div class="cat-chip">${cat}<span class="amt">$${amt.toFixed(2)}</span></div>`)
+    .join('');
+
+  renderProrrateo(weekTotal);
+}
+
+function renderProrrateo(weekTotalAuto) {
+  if (weekTotalAuto === undefined) {
+    const { start, end } = getWeekRange(currentWeekOffset);
+    weekTotalAuto = expenses.filter(e => {
+      const d = new Date(e.date);
+      return d >= start && d <= end;
+    }).reduce((s, e) => s + e.amount, 0);
+  }
+
+  const baseInput = document.getElementById('baseAporte');
+  const totalInput = document.getElementById('totalGastosManual');
+  baseInput.value = weekData.base;
+  totalInput.value = weekData.touched ? weekData.totalManual : weekTotalAuto.toFixed(2);
+
+  const base = weekData.base;
+  const totalGastos = weekData.touched ? weekData.totalManual : weekTotalAuto;
+  const cuotaBase = totalGastos / 7;
+
+  const tbody = document.getElementById('prorrateoList');
+  let sumaCuotas = 0;
+  let sumaAjuste = 0;
+
+  tbody.innerHTML = peopleNames.map((name, i) => {
+    const compra = weekData.compras[i] || 0;
+    const compraPersonal = weekData.comprasPersonales[i] || 0;
+
+    // Total aportado = aporte inicial + compra propia (automático)
+    const totalAportado = base + compra;
+
+    // Cuota individual = cuota base (total gastos / 7) + sus compras personales
+    const cuota = cuotaBase + compraPersonal;
+
+    // Resultado = diferencia entre lo aportado y su cuota
+    const resultado = totalAportado - cuota;
+
+    sumaCuotas += cuota;
+    sumaAjuste += (base + compra + resultado);
+
+    let resultLabel, resultClass;
+    if (Math.abs(resultado) < 0.01) {
+      resultLabel = 'Justo';
+      resultClass = 'result-ok';
+    } else if (resultado > 0) {
+      resultLabel = `Le devuelven $${resultado.toFixed(2)}`;
+      resultClass = 'result-back';
+    } else {
+      resultLabel = `Debe pagar $${Math.abs(resultado).toFixed(2)}`;
+      resultClass = 'result-pay';
+    }
+    return `
+      <tr>
+        <td><input type="text" value="${name}" onchange="updatePersonName(${i}, this.value)"></td>
+        <td>$${base.toFixed(2)}</td>
+        <td><input type="number" class="prorrateo-input" value="${compra}" onchange="updatePersonCompra(${i}, this.value)"></td>
+        <td><input type="number" class="prorrateo-input" value="${compraPersonal}" onchange="updatePersonComprasPersonales(${i}, this.value)"></td>
+        <td>$${totalAportado.toFixed(2)}</td>
+        <td>$${cuota.toFixed(2)}</td>
+        <td class="${resultClass}">${resultLabel}</td>
+      </tr>
+    `;
+  }).join('');
+
+  document.getElementById('totalGastosCheck').textContent = `$${sumaCuotas.toFixed(2)}`;
+  document.getElementById('totalAjusteCheck').textContent = `$${sumaAjuste.toFixed(2)}`;
+}
+
+loadData();
+</script>
+</body>
+</html>
